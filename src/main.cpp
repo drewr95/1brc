@@ -178,9 +178,6 @@ auto process_raw_data(std::istream &in) -> Database {
 
   while (std::getline(in, station, ';') &&
          std::getline(in, value_string, '\n')) {
-    if (station.empty() || value_string.empty()) {
-      continue; // skip malformed lines.
-    }
     const auto value{parse_temperature(value_string)};
 
     auto it = db.find(station);
@@ -209,7 +206,11 @@ constexpr auto find_chunk_boundary(const std::span<const char> &chunk,
   while (pos < chunk.size() && chunk[pos] != '\n') {
     ++pos;
   }
-  return pos + 1; // Include the newline.
+  // Only advance past newline if we found one
+  if (pos < chunk.size()) {
+    return pos + 1;
+  }
+  return pos; // At end of chunk, no newline found
 }
 
 ///
@@ -246,12 +247,16 @@ auto process_data_parallel(const std::span<const char> &data,
   const auto chunk_size = data.size() / thread_count;
 
   for (std::size_t i = 0; i < thread_count; ++i) {
-    const auto start = i * chunk_size;
+    auto start = i * chunk_size;
+    // Skip to the next complete line for non-first chunks
+    if (i > 0) {
+      start = find_chunk_boundary(data, start);
+    }
     auto end = (i == thread_count - 1)
                    ? data.size()
                    : find_chunk_boundary(data, (i + 1) * chunk_size);
 
-    threads.emplace_back([&, start, end, i]() {
+    threads.emplace_back([&data, &partial_dbs, start, end, i]() {
       std::ispanstream in{data.subspan(start, end - start)};
       partial_dbs[i] = process_raw_data(in);
     });
@@ -297,7 +302,7 @@ auto print(const Database &db, std::ostream &out = std::cout) noexcept -> void {
 /// @return Exit status code.
 ///
 auto main(const int argc, const char **argv) noexcept -> int {
-  const MappedFile mapped_file{"../../data/measurements.txt"};
+  const MappedFile mapped_file{"data/measurements.txt"};
   const auto db{process_data_parallel(mapped_file.data(),
                                       std::thread::hardware_concurrency())};
   print(db);
