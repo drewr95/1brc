@@ -11,6 +11,7 @@
 #include <string>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <thread>
 #include <unistd.h>
 #include <unordered_map>
 #include <utility>
@@ -167,6 +168,77 @@ auto process_raw_data(std::istream &in) -> Database {
   return db;
 }
 
+///
+/// @brief Finds the boundary of a chunk by locating the next newline character.
+/// @param chunk The data chunk as a span of const chars.
+/// @param pos The starting position to search from.
+/// @return The position of the chunk boundary (after the newline).
+///
+constexpr auto find_chunk_boundary(const std::span<const char> &chunk,
+                                   std::size_t pos) noexcept -> std::size_t {
+  while (pos < chunk.size() && chunk[pos] != '\n') {
+    ++pos;
+  }
+  return pos + 1; // Include the newline.
+}
+
+///
+/// @brief Merges the source database into the destination database.
+/// @param dest The destination database to merge into.
+/// @param src The source database to merge from.
+///
+auto merge_databases(Database &dest, const Database &src) noexcept -> void {
+  for (const auto &[station, record] : src) {
+    auto it = dest.find(station);
+    if (it == dest.end()) {
+      dest.emplace(station, record);
+      continue;
+    }
+
+    it->second.min = std::min(it->second.min, record.min);
+    it->second.max = std::max(it->second.max, record.max);
+    it->second.sum += record.sum;
+    it->second.count += record.count;
+  }
+}
+
+///
+/// @brief Processes the data in parallel using multiple threads.
+/// @param data The input data as a span of const chars.
+/// @param thread_count The number of threads to use for processing.
+/// @return A database containing the processed records.
+///
+auto process_data_parallel(const std::span<const char> &data,
+                           const std::size_t thread_count) noexcept
+    -> Database {
+  std::vector<Database> partial_dbs(thread_count);
+  std::vector<std::thread> threads;
+  const auto chunk_size = data.size() / thread_count;
+
+  for (std::size_t i = 0; i < thread_count; ++i) {
+    const auto start = i * chunk_size;
+    auto end = (i == thread_count - 1)
+                   ? data.size()
+                   : find_chunk_boundary(data, (i + 1) * chunk_size);
+
+    threads.emplace_back([&, start, end, i]() {
+      std::istringstream in(std::string(data.data() + start, end - start));
+      partial_dbs[i] = process_raw_data(in);
+    });
+  }
+
+  for (auto &thread : threads) {
+    thread.join();
+  }
+
+  Database final_db;
+  for (const auto &partial_db : partial_dbs) {
+    merge_databases(final_db, partial_db);
+  }
+
+  return final_db;
+}
+
 auto print(const Database &db, std::ostream &out = std::cout) noexcept -> void {
   std::vector<std::string> stations{db.size()};
   std::ranges::copy(db | std::ranges::views::keys, stations.begin());
@@ -191,8 +263,8 @@ auto print(const Database &db, std::ostream &out = std::cout) noexcept -> void {
 ///
 auto main(const int argc, const char **argv) noexcept -> int {
   const MappedFile mapped_file{"../../data/measurements.txt"};
-  std::ispanstream input_stream{mapped_file.data()};
-  const auto db{process_raw_data(input_stream)};
+  const auto db{process_data_parallel(mapped_file.data(),
+                                      std::thread::hardware_concurrency())};
   print(db);
 
   return 0;
