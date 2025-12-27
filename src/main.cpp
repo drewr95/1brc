@@ -137,6 +137,35 @@ struct Record {
 using Database = std::unordered_map<std::string, Record>;
 
 ///
+/// @brief Parses the temperature value from the given string.
+/// @param value_string The string containing the temperature value.
+/// @return The parsed temperature as a float.
+///
+constexpr auto parse_temperature(const std::string &value_string) noexcept
+    -> float {
+  const auto is_positive{value_string.at(0) != '-'};
+  float result{0.0F};
+
+  // Parse integer part.
+  constexpr float base{10.0F};
+  std::size_t i{is_positive ? 0U : 1U};
+  const auto string_size{value_string.size()};
+  for (; i < string_size && value_string.at(i) != '.'; ++i) {
+    result = (result * base) + static_cast<float>(value_string[i] - '0');
+  }
+
+  // Parse decimal part.
+  constexpr float decimal_base{0.1F};
+  const auto decimal_pos{i + 1};
+  if (decimal_pos < string_size) {
+    result +=
+        static_cast<float>(value_string.at(decimal_pos) - '0') * decimal_base;
+  }
+
+  return is_positive ? result : -result;
+}
+
+///
 /// @brief Processes the input data from the given input stream.
 /// @param in The input stream to read data from.
 /// @return A database containing the processed records.
@@ -149,9 +178,10 @@ auto process_raw_data(std::istream &in) -> Database {
 
   while (std::getline(in, station, ';') &&
          std::getline(in, value_string, '\n')) {
-    float value;
-    std::from_chars(value_string.data(),
-                    value_string.data() + value_string.size(), value);
+    if (station.empty() || value_string.empty()) {
+      continue; // skip malformed lines.
+    }
+    const auto value{parse_temperature(value_string)};
 
     auto it = db.find(station);
     if (it == db.end()) {
