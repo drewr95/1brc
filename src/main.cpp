@@ -171,10 +171,12 @@ constexpr auto parse_temperature(const std::string &value_string) noexcept
 /// @return A database containing the processed records.
 ///
 auto process_raw_data(std::istream &in) -> Database {
+  constexpr size_t station_max_length{30};
+  constexpr size_t longest_value_length{10}; // e.g., "-100.4\n"
   Database db;
 
-  std::string station;
-  std::string value_string;
+  std::string station(station_max_length, '\0');
+  std::string value_string(longest_value_length, '\0');
 
   while (std::getline(in, station, ';') &&
          std::getline(in, value_string, '\n')) {
