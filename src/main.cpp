@@ -239,6 +239,11 @@ auto process_data_parallel(const std::span<const char> &data,
   return final_db;
 }
 
+///
+/// @brief Prints the database records to the specified output stream.
+/// @param db The database to print.
+/// @param out The output stream to print to (default is std::cout).
+///
 auto print(const Database &db, std::ostream &out = std::cout) noexcept -> void {
   std::vector<std::string> stations{db.size()};
   std::ranges::copy(db | std::ranges::views::keys, stations.begin());
