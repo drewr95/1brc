@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -143,21 +144,24 @@ auto process_raw_data(std::istream &in) -> Database {
   Database db;
 
   std::string station;
-  std::string value;
+  std::string value_string;
 
-  while (std::getline(in, station, ';') && std::getline(in, value, '\n')) {
-    const auto val = std::stof(value);
+  while (std::getline(in, station, ';') &&
+         std::getline(in, value_string, '\n')) {
+    float value;
+    std::from_chars(value_string.data(),
+                    value_string.data() + value_string.size(), value);
 
     auto it = db.find(station);
     if (it == db.end()) {
       db.emplace(station,
-                 Record{.count = 1, .sum = val, .min = val, .max = val});
+                 Record{.count = 1, .sum = value, .min = value, .max = value});
       continue;
     }
 
-    it->second.min = std::min(it->second.min, val);
-    it->second.max = std::max(it->second.max, val);
-    it->second.sum += val;
+    it->second.min = std::min(it->second.min, value);
+    it->second.max = std::max(it->second.max, value);
+    it->second.sum += value;
     ++it->second.count;
   }
   return db;
@@ -186,7 +190,7 @@ auto print(const Database &db, std::ostream &out = std::cout) noexcept -> void {
 /// @return Exit status code.
 ///
 auto main(const int argc, const char **argv) noexcept -> int {
-  const MappedFile mapped_file{"../../data/weather_stations.csv"};
+  const MappedFile mapped_file{"../../data/measurements.txt"};
   std::ispanstream input_stream{mapped_file.data()};
   const auto db{process_raw_data(input_stream)};
   print(db);
