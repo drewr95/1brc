@@ -222,7 +222,7 @@ auto process_data_parallel(const std::span<const char> &data,
                    : find_chunk_boundary(data, (i + 1) * chunk_size);
 
     threads.emplace_back([&, start, end, i]() {
-      std::istringstream in(std::string(data.data() + start, end - start));
+      std::ispanstream in{data.subspan(start, end - start)};
       partial_dbs[i] = process_raw_data(in);
     });
   }
